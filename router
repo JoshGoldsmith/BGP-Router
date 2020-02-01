@@ -126,7 +126,14 @@ class Router:
     route_info[NMSK] = packet[NMSK]
     route_info[PEER] = srcif
     self.routes.append(route_info)
-    
+    update_info = {}
+    update_info[NTWK] = packet[NTWK]
+    update_info[NMSK] = packet[NMSK]
+    update_info[ORIG] = packet[ORIG]
+    update_info[LPRF] = packet[LPRF]
+    update_info[APTH] = packet[APTH]
+    update_info[SORG] = packet[SORG]
+    self.updates.append(update_info)
     return True
 
   def revoke(self, packet):
@@ -144,11 +151,13 @@ class Router:
     # TODO
     if packet[type] == 'update':
       return self.update(srcif, packet)
-    if packet[type] == 'data':
+    elif packet[type] == 'data':
       return self.forward(srcif, packet)
-    if packet[type] == 'dump':
+    elif packet[type] == 'dump':
       return self.dump(packet)
-    return False
+    else:
+        return False
+    
 
   def send_error(self, conn, msg):
     """ Send a no_route error message """
