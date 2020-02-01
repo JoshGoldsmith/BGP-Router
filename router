@@ -41,7 +41,7 @@ PROV = "prov"
 class Router:
   """ Your Router """
   def __init__(self, networks):
-    self.routes = {}
+    self.routes = [] # Routing Table (list of dictionaries containing routing info)
     self.updates = {}
     self.relations = {}
     self.sockets = {}
@@ -120,8 +120,14 @@ class Router:
 
   def update(self, srcif, packet):
     """ handle update packets """
-    # TODO 
-    return False
+    # TODO
+    route_info = {}
+    route_info[NTWK] = packet[NTWK]
+    route_info[NMSK] = packet[NMSK]
+    route_info[PEER] = srcif
+    self.routes.append(route_info)
+    
+    return True
 
   def revoke(self, packet):
     """ handle revoke packets """
@@ -136,6 +142,12 @@ class Router:
   def handle_packet(self, srcif, packet):
     """ dispatches a packet """
     # TODO
+    if packet[type] == 'update':
+      return self.update(srcif, packet)
+    if packet[type] == 'data':
+      return self.forward(srcif, packet)
+    if packet[type] == 'dump':
+      return self.dump(packet)
     return False
 
   def send_error(self, conn, msg):
