@@ -41,8 +41,8 @@ PROV = "prov"
 class Router:
   """ Your Router """
   def __init__(self, networks):
-    self.routes = [] # Routing Table (list of dictionaries containing routing info)
-    self.updates = {}
+    self.routes = {} # Routing Table (list of dictionaries containing routing info)
+    self.updates = []
     self.relations = {}
     self.sockets = {}
     for relationship in networks:
@@ -121,19 +121,31 @@ class Router:
   def update(self, srcif, packet):
     """ handle update packets """
     # TODO
-    route_info = {}
-    route_info[NTWK] = packet[NTWK]
-    route_info[NMSK] = packet[NMSK]
-    route_info[PEER] = srcif
-    self.routes.append(route_info)
     update_info = {}
     update_info[NTWK] = packet[NTWK]
     update_info[NMSK] = packet[NMSK]
-    update_info[ORIG] = packet[ORIG]
     update_info[LPRF] = packet[LPRF]
-    update_info[APTH] = packet[APTH]
     update_info[SORG] = packet[SORG]
+    update_info[APTH] = packet[APTH]
+    update_info[ORIG] = packet[ORIG]
     self.updates.append(update_info)
+
+    route_info = update_info
+    route_info[PEER] = srcif
+    self.routes[packet[NTWK]] = route_info
+
+    for network in self.sockets:
+      if network == srcif:
+        continue
+      new_packet = {}
+      new_packet[SRCE] = network[:-1] + '1'
+      new_packet[DEST] = network
+      new_packet[TYPE] = UPDT
+      new_packet[MESG] = update_info
+
+      new_packet_convert = bytes(json.dumps(new_packet))
+      self.sockets[network].sendall(new_packet_convert)
+
     return True
 
   def revoke(self, packet):
@@ -151,9 +163,9 @@ class Router:
     response[TYPE] = 'table'
     for entry in self.routes:
       row = {}
-      row[NTWK] = entry[NTWK]
-      row[NMSK] = entry[NMSK]
-      row[PEER] = entry[PEER]
+      row[NTWK] = self.routes[entry][NTWK]
+      row[NMSK] = self.routes[entry][NMSK]
+      row[PEER] = self.routes[entry][PEER]
       msg.append(row)
     response[MESG] = msg
     response_convert = bytes(json.dumps(response))
