@@ -144,6 +144,20 @@ class Router:
   def dump(self, packet):
     """ handles dump table requests """
     # TODO
+    response = {}
+    msg = []
+    response[SRCE] = packet[DEST]
+    response[DEST] = packet[SRCE]
+    response[TYPE] = 'table'
+    for entry in self.routes:
+      row = {}
+      row[NTWK] = entry[NTWK]
+      row[NMSK] = entry[NMSK]
+      row[PEER] = entry[PEER]
+      msg.append(row)
+    response[MESG] = msg
+    response_convert = bytes(json.dumps(response))
+    self.sockets[packet[SRCE]].sendall(response_convert)
     return True
 
   def handle_packet(self, srcif, packet):
