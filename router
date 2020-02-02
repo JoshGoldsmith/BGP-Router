@@ -108,9 +108,45 @@ class Router:
       routes = self.filter_relationships(srcif, routes)
     return self.sockets[peer] if peer else None
 
+  # checks if an address is within one of the networks in our routing table
+  # return false or name of network
+  def check_address_mask(self, address):
+    for network in self.routes:
+      netmask = self.routes[network][NMSK]
+      network_split = network.split('.')
+      netmask_split = netmask.split('.')
+      address_split = address.split('.')
+
+      match = False
+      for i in netmask_split:
+        if netmask_split[i] == '255':
+          if not network_split[i] == address_split[i]:
+            match = True
+            continue
+
+      if match:
+        return network
+
+    return False
+
+
   def forward(self, srcif, packet):
     """ Forward a data packet """
     # TODO
+    check = self.check_address_mask(packet[DEST])
+    if not check:
+      no_route = {SRCE: srcif[:-1] + '1',
+                  DEST: srcif,
+                  TYPE: NRTE,
+                  MESG: {}}
+
+      no_route_convert = bytes(json.dumps(no_route))
+      self.sockets[no_route[SRCE]].sendall(no_route_convert)
+
+    else:
+      packet_convert = bytes(json.loads(packet))
+      self.sockets[check].sendall(packet_convert)
+
     return False
 
   def coalesce(self):
@@ -121,13 +157,12 @@ class Router:
   def update(self, srcif, packet):
     """ handle update packets """
     # TODO
-    update_info = {}
-    update_info[NTWK] = packet[NTWK]
-    update_info[NMSK] = packet[NMSK]
-    update_info[LPRF] = packet[LPRF]
-    update_info[SORG] = packet[SORG]
-    update_info[APTH] = packet[APTH]
-    update_info[ORIG] = packet[ORIG]
+    update_info = {NTWK: packet[NTWK],
+                   NMSK: packet[NMSK],
+                   LPRF: packet[LPRF],
+                   SORG: packet[SORG],
+                   APTH: packet[APTH],
+                   ORIG: packet[ORIG]}
     self.updates.append(update_info)
 
     route_info = update_info
@@ -137,11 +172,10 @@ class Router:
     for network in self.sockets:
       if network == srcif:
         continue
-      new_packet = {}
-      new_packet[SRCE] = network[:-1] + '1'
-      new_packet[DEST] = network
-      new_packet[TYPE] = UPDT
-      new_packet[MESG] = update_info
+      new_packet = {SRCE: network[:-1] + '1',
+                    DEST: network,
+                    TYPE: UPDT,
+                    MESG: update_info}
 
       new_packet_convert = bytes(json.dumps(new_packet))
       self.sockets[network].sendall(new_packet_convert)
@@ -156,16 +190,10 @@ class Router:
   def dump(self, packet):
     """ handles dump table requests """
     # TODO
-    response = {}
     msg = []
-    response[SRCE] = packet[DEST]
-    response[DEST] = packet[SRCE]
-    response[TYPE] = 'table'
+    response = {SRCE: packet[DEST], DEST: packet[SRCE], TYPE: 'table'}
     for entry in self.routes:
-      row = {}
-      row[NTWK] = self.routes[entry][NTWK]
-      row[NMSK] = self.routes[entry][NMSK]
-      row[PEER] = self.routes[entry][PEER]
+      row = {NTWK: self.routes[entry][NTWK], NMSK: self.routes[entry][NMSK], PEER: self.routes[entry][PEER]}
       msg.append(row)
     response[MESG] = msg
     response_convert = bytes(json.dumps(response))
@@ -205,7 +233,6 @@ class Router:
             if self.sockets[sock] == conn:
               srcif = sock
           msg = json.loads(k)
-          print(msg)
           if not self.handle_packet(srcif, msg):
             self.send_error(conn, msg)
         else:
