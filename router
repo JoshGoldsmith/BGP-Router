@@ -40,7 +40,8 @@ PROV = "prov"
 
 class Router:
   """ Your Router """
-  def __init__(self, networks):
+  def __init__(self, asn, networks):
+    self.asn = asn
     self.routes = {} # Routing Table (list of dictionaries containing routing info)
     self.updates = []
     self.relations = {}
@@ -109,7 +110,7 @@ class Router:
     return self.sockets[peer] if peer else None
 
   # checks if an address is within one of the networks in our routing table
-  # return false or name of network
+  # return false or peer address
   def check_address_mask(self, address):
     for network in self.routes:
       netmask = self.routes[network][NMSK]
@@ -117,15 +118,15 @@ class Router:
       netmask_split = netmask.split('.')
       address_split = address.split('.')
 
-      match = False
-      for i in netmask_split:
+      match = True
+      for i in range(len(netmask_split)):
         if netmask_split[i] == '255':
           if not network_split[i] == address_split[i]:
-            match = True
+            match = False
             continue
 
       if match:
-        return network
+        return self.routes[network][PEER]
 
     return False
 
@@ -140,11 +141,12 @@ class Router:
                   TYPE: NRTE,
                   MESG: {}}
 
-      no_route_convert = bytes(json.dumps(no_route))
+      no_route_convert = bytes(json.dumps(no_route), 'ascii')
       self.sockets[no_route[SRCE]].sendall(no_route_convert)
 
     else:
-      packet_convert = bytes(json.loads(packet))
+      packet_convert = bytes(json.dumps(packet), 'ascii')
+        
       self.sockets[check].sendall(packet_convert)
 
     return False
@@ -157,17 +159,19 @@ class Router:
   def update(self, srcif, packet):
     """ handle update packets """
     # TODO
-    update_info = {NTWK: packet[NTWK],
-                   NMSK: packet[NMSK],
-                   LPRF: packet[LPRF],
-                   SORG: packet[SORG],
-                   APTH: packet[APTH],
-                   ORIG: packet[ORIG]}
+    new_apath = packet[MESG][APTH]
+    new_apath.append(self.asn)
+    update_info = {NTWK: packet[MESG][NTWK],
+                   NMSK: packet[MESG][NMSK],
+                   LPRF: packet[MESG][LPRF],
+                   SORG: packet[MESG][SORG],
+                   APTH: new_apath,
+                   ORIG: packet[MESG][ORIG]}
     self.updates.append(update_info)
 
     route_info = update_info
     route_info[PEER] = srcif
-    self.routes[packet[NTWK]] = route_info
+    self.routes[packet[MESG][NTWK]] = route_info
 
     for network in self.sockets:
       if network == srcif:
@@ -177,8 +181,11 @@ class Router:
                     TYPE: UPDT,
                     MESG: update_info}
 
-      new_packet_convert = bytes(json.dumps(new_packet))
-      self.sockets[network].sendall(new_packet_convert)
+
+
+      new_packet_convert = bytes(json.dumps(new_packet), 'ascii')
+      
+      self.sockets[network[:-1] + '2'].sendall(new_packet_convert)
 
     return True
 
@@ -196,18 +203,18 @@ class Router:
       row = {NTWK: self.routes[entry][NTWK], NMSK: self.routes[entry][NMSK], PEER: self.routes[entry][PEER]}
       msg.append(row)
     response[MESG] = msg
-    response_convert = bytes(json.dumps(response))
-    self.sockets[packet[SRCE]].sendall(response_convert)
+    response_convert = bytes(json.dumps(response), 'ascii')
+    self.sockets[packet[SRCE][:-1] + '2'].sendall(response_convert)
     return True
 
   def handle_packet(self, srcif, packet):
     """ dispatches a packet """
     # TODO
-    if packet[type] == 'update':
+    if packet[TYPE] == UPDT:
       return self.update(srcif, packet)
-    elif packet[type] == 'data':
+    elif packet[TYPE] == DATA:
       return self.forward(srcif, packet)
-    elif packet[type] == 'dump':
+    elif packet[TYPE] == DUMP:
       return self.dump(packet)
     else:
         return False
@@ -243,4 +250,4 @@ if __name__ == "__main__":
   PARSER.add_argument('asn', type=int)
   PARSER.add_argument('networks', metavar='networks', type=str, nargs='+', help="networks")
   ARGS = PARSER.parse_args()
-  Router(ARGS.networks).run()
+  Router(ARGS.asn, ARGS.networks).run()
