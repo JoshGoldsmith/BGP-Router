@@ -42,7 +42,7 @@ class Router:
   """ Your Router """
   def __init__(self, asn, networks):
     self.asn = asn
-    self.routes = {} # Routing Table (list of dictionaries containing routing info)
+    self.routes = [] # Routing Table (list of dictionaries containing routing info)
     self.updates = []
     self.relations = {}
     self.sockets = {}
@@ -57,6 +57,23 @@ class Router:
     """ Lookup all valid routes for an address """
     # TODO
     outroutes = []
+    for entry in self.routes:
+      netmask = entry[NMSK]
+      network = entry[NTWK]
+      network_split = network.split('.')
+      netmask_split = netmask.split('.')
+      address_split = daddr.split('.')
+      
+      match = True
+      for i in range(len(netmask_split)):
+        if netmask_split[i] == '255':
+          if not network_split[i] == address_split[i]:
+            match = False
+            continue
+
+      if match:
+        outroutes.append(entry)
+
     return outroutes
 
   def get_shortest_as_path(self, routes):
@@ -66,7 +83,7 @@ class Router:
     return outroutes
 
   def get_highest_preference(self, routes):
-    """ select the route with the shortest AS Path """
+    """ select the route with the highest localpref """
     # TODO
     outroutes = []
     return outroutes
@@ -109,32 +126,10 @@ class Router:
       routes = self.filter_relationships(srcif, routes)
     return self.sockets[peer] if peer else None
 
-  # checks if an address is within one of the networks in our routing table
-  # return false or peer address
-  def check_address_mask(self, address):
-    for network in self.routes:
-      netmask = self.routes[network][NMSK]
-      network_split = network.split('.')
-      netmask_split = netmask.split('.')
-      address_split = address.split('.')
-
-      match = True
-      for i in range(len(netmask_split)):
-        if netmask_split[i] == '255':
-          if not network_split[i] == address_split[i]:
-            match = False
-            continue
-
-      if match:
-        return self.routes[network][PEER]
-
-    return False
-
-
   def forward(self, srcif, packet):
     """ Forward a data packet """
     # TODO
-    check = self.check_address_mask(packet[DEST])
+    check = self.lookup_routes(packet[DEST])
     if not check:
       no_route = {SRCE: srcif[:-1] + '1',
                   DEST: srcif,
@@ -147,7 +142,7 @@ class Router:
     else:
       packet_convert = bytes(json.dumps(packet), 'ascii')
         
-      self.sockets[check].sendall(packet_convert)
+      self.sockets[check[0][PEER]].sendall(packet_convert)
 
     return False
 
@@ -171,7 +166,7 @@ class Router:
 
     route_info = update_info
     route_info[PEER] = srcif
-    self.routes[packet[MESG][NTWK]] = route_info
+    self.routes.append(route_info)
 
     for network in self.sockets:
       if network == srcif:
@@ -200,7 +195,7 @@ class Router:
     msg = []
     response = {SRCE: packet[DEST], DEST: packet[SRCE], TYPE: 'table'}
     for entry in self.routes:
-      row = {NTWK: self.routes[entry][NTWK], NMSK: self.routes[entry][NMSK], PEER: self.routes[entry][PEER]}
+      row = {NTWK: entry[NTWK], NMSK: entry[NMSK], PEER: entry[PEER]}
       msg.append(row)
     response[MESG] = msg
     response_convert = bytes(json.dumps(response), 'ascii')
