@@ -137,24 +137,34 @@ class Router:
         outroutes.append(entry)
     return outroutes
 
+  # return 1 if the first of two split ips is lower, 2 if the second is (return 1 if equal)
+  def compare_split_ips(self, first, second):
+    for i in range(len(first)):
+      if i > len(second):
+        return 2
+      if first[i] < second[i]:
+        return 1
+      if second[i] < first[i]:
+        return 2
+
+    return 1
+
   def get_lowest_ip(self, routes):
     #only checks first # in ip address. should probably be changed
-    outroutes = []
     ips = []
     ips_split = []
-    lowest = 256
+    #index of lowest ip in list
+    lowest = 0
+
     for entry in routes:
       ips.append(entry[PEER])
-    for n in ips:
-      ips_split.append(ips[n].split('.'))
-    for n in ips:
-      if ips_split[n][0] < lowest:
-        lowest = ips_split[n][0]
-    for n in ips_split:
-      if lowest == ips_split[n][0]:
-        if ips[n] == routes[n][PEER]:
-          return routes[n][PEER]
-    return outroutes
+    for ip in ips:
+      ips_split.append(ip.split('.'))
+    for index in range(len(ips_split)):
+        if self.compare_split_ips(ips_split[lowest], ips_split[index]) == 2:
+          lowest = index
+
+    return ips[lowest]
 
   def filter_relationships(self, srcif, routes):
     """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
