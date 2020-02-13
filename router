@@ -80,29 +80,89 @@ class Router:
     """ select the route with the shortest AS Path """
     # TODO
     outroutes = []
+    as_length = 100 
+    for entry in routes:
+      if as_length > len(entry[APTH]):
+        as_length = len(entry[APTH])
+
+    for entry in routes:
+      if as_length == len(entry[APTH]):
+        outroutes.append(entry)
     return outroutes
 
   def get_highest_preference(self, routes):
     """ select the route with the highest localpref """
     # TODO
+    highest_lpref = 0
     outroutes = []
+    for entry in routes:
+      if entry[LPRF] > highest_lpref:
+        highest_lpref = entry[LPRF]
+    
+    for entry in routes:
+      if entry[LPRF] == highest_lpref:
+        outroutes.append(entry)
+    
     return outroutes
 
   def get_self_origin(self, routes):
     """ select self originating routes """
     # TODO
     outroutes = []
+    for entry in routes:
+      if entry[SORG]:
+        outroutes.append(entry)
+    if not outroutes:
+      for entry in routes:
+        outroutes.append(entry)
     return outroutes
 
   def get_origin_routes(self, routes):
     """ select origin routes: EGP > IGP > UNK """
+    #assuming they meant IGP > EGP > UNK
     # TODO
     outroutes = []
+    for entry in routes:
+      if entry[ORIG] == "IGP":
+        outroutes.append(entry)
+    if len(outroutes) != 0:
+      return outroutes
+    for entry in routes:
+      if entry[ORIG] == "EGP":
+        outroutes.append(entry)
+    if len(outroutes) != 0:
+      return outroutes
+    for entry in routes:
+      if entry[ORIG] == "UNK":
+        outroutes.append(entry)
+    return outroutes
+
+  def get_lowest_ip(self, routes):
+    #only checks first # in ip address. should probably be changed
+    outroutes = []
+    ips = []
+    ips_split = []
+    lowest = 256
+    for entry in routes:
+      ips.append(entry[PEER])
+    for n in ips:
+      ips_split.append(ips[n].split('.'))
+    for n in ips:
+      if ips_split[n][0] < lowest:
+        lowest = ips_split[n][0]
+    for n in ips_split:
+      if lowest == ips_split[n][0]:
+        if ips[n] == routes[n][PEER]:
+          return routes[n][PEER]
     return outroutes
 
   def filter_relationships(self, srcif, routes):
     """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
-    outroutes = []
+    outroutes = routes
+#    for entry in routes:
+#        for neighbor in self.relations:
+#            if entry[NTWK] == neighbor[NTWK]:
+#                if entry[TYPE] == "peer" && neighbor
     return outroutes
 
   def get_route(self, srcif, daddr):
@@ -122,14 +182,16 @@ class Router:
       routes = self.get_origin_routes(routes)
       # 5. Lowest IP Address
       # TODO
+      #routes = self.get_lowest_ip(routes)
       # Final check: enforce peering relationships
       routes = self.filter_relationships(srcif, routes)
-    return self.sockets[peer] if peer else None
-
+    peer = routes[0][PEER]
+    #return self.sockets[peer] if peer else None
+    return peer
   def forward(self, srcif, packet):
     """ Forward a data packet """
     # TODO
-    check = self.lookup_routes(packet[DEST])
+    check = self.get_route(srcif, packet[DEST])
     if not check:
       no_route = {SRCE: srcif[:-1] + '1',
                   DEST: srcif,
@@ -141,8 +203,7 @@ class Router:
 
     else:
       packet_convert = bytes(json.dumps(packet), 'ascii')
-        
-      self.sockets[check[0][PEER]].sendall(packet_convert)
+      self.sockets[check].sendall(packet_convert)
 
     return False
 
