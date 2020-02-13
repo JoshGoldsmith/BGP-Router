@@ -44,6 +44,7 @@ class Router:
     self.asn = asn
     self.routes = [] # Routing Table (list of dictionaries containing routing info)
     self.updates = []
+    self.revokes = []
     self.relations = {}
     self.sockets = {}
     for relationship in networks:
@@ -164,7 +165,7 @@ class Router:
         if self.compare_split_ips(ips_split[lowest], ips_split[index]) == 2:
           lowest = index
 
-    return ips[lowest]
+    return [routes[lowest]]
 
   def filter_relationships(self, srcif, routes):
     """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
@@ -192,9 +193,11 @@ class Router:
       routes = self.get_origin_routes(routes)
       # 5. Lowest IP Address
       # TODO
-      #routes = self.get_lowest_ip(routes)
+      routes = self.get_lowest_ip(routes)
       # Final check: enforce peering relationships
       routes = self.filter_relationships(srcif, routes)
+    if not routes:
+      return []
     peer = routes[0][PEER]
     #return self.sockets[peer] if peer else None
     return peer
@@ -203,19 +206,13 @@ class Router:
     # TODO
     check = self.get_route(srcif, packet[DEST])
     if not check:
-      no_route = {SRCE: srcif[:-1] + '1',
-                  DEST: srcif,
-                  TYPE: NRTE,
-                  MESG: {}}
-
-      no_route_convert = bytes(json.dumps(no_route), 'ascii')
-      self.sockets[no_route[SRCE]].sendall(no_route_convert)
-
+      self.send_error(srcif, {})
     else:
+      
       packet_convert = bytes(json.dumps(packet), 'ascii')
       self.sockets[check].sendall(packet_convert)
 
-    return False
+    return True
 
   def coalesce(self):
     """ coalesce any routes that are right next to each other """
@@ -255,14 +252,40 @@ class Router:
 
     return True
 
-  def revoke(self, packet):
+  def revoke(self, srcif, packet):
     """ handle revoke packets """
-    # TODO
+    
+    for item in packet[MESG]:
+      revoke_info = {NTWK: item[NTWK],
+                     NMSK: item[NMSK]}
+      self.revokes.append(revoke_info)
+      indexes_to_del = []
+      for index in range(len(self.routes)):
+        if self.routes[index][NTWK] == revoke_info[NTWK] and self.routes[index][NMSK] == revoke_info[NMSK] and self.routes[index][PEER] == srcif:
+          indexes_to_del.insert(0, index)
+      
+      for i in indexes_to_del:
+        del self.routes[i]
+    for network in self.sockets:
+      if network == srcif:
+        continue
+      new_packet = {SRCE: network[:-1] + '1',
+                    DEST: network,
+                    TYPE: RVKE,
+                    MESG: packet[MESG]}
+
+
+
+      new_packet_convert = bytes(json.dumps(new_packet), 'ascii')
+      
+      self.sockets[network[:-1] + '2'].sendall(new_packet_convert)
+
+
+
     return True
 
   def dump(self, packet):
     """ handles dump table requests """
-    # TODO
     msg = []
     response = {SRCE: packet[DEST], DEST: packet[SRCE], TYPE: 'table'}
     for entry in self.routes:
@@ -275,11 +298,12 @@ class Router:
 
   def handle_packet(self, srcif, packet):
     """ dispatches a packet """
-    # TODO
     if packet[TYPE] == UPDT:
       return self.update(srcif, packet)
     elif packet[TYPE] == DATA:
       return self.forward(srcif, packet)
+    elif packet[TYPE] == RVKE:
+      return self.revoke(srcif, packet)
     elif packet[TYPE] == DUMP:
       return self.dump(packet)
     else:
@@ -289,6 +313,13 @@ class Router:
   def send_error(self, conn, msg):
     """ Send a no_route error message """
     # TODO
+    no_route = {SRCE: conn[:-1] + '1',
+                DEST: conn,
+                TYPE: NRTE,
+                MESG: msg}
+
+    no_route_convert = bytes(json.dumps(no_route), 'ascii')
+    self.sockets[no_route[DEST]].sendall(no_route_convert)
     return
 
   def run(self):
