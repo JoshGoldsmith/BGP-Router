@@ -57,25 +57,46 @@ class Router:
   def lookup_routes(self, daddr):
     """ Lookup all valid routes for an address """
     # TODO
-    outroutes = []
+    # dictionary of lists of routes. key is length of bit match
+    outroutes = { 0: [] }
+    longest_match = 0
     for entry in self.routes:
       netmask = entry[NMSK]
       network = entry[NTWK]
-      network_split = network.split('.')
+
       netmask_split = netmask.split('.')
+
+      network_split = network.split('.')
+      network_convert = ""
+      for i in network_split:
+        network_convert += format(int(i), "08b")
+
       address_split = daddr.split('.')
+      address_convert = ""
+      for i in address_split:
+        address_convert += format(int(i), "08b")
       
-      match = True
+      mask_match = True
       for i in range(len(netmask_split)):
         if netmask_split[i] == '255':
           if not network_split[i] == address_split[i]:
-            match = False
+            mask_match = False
             continue
 
-      if match:
-        outroutes.append(entry)
+      match_length = 0
+      if mask_match:
+        for i in range(len(network_convert)):
+          if network_convert[i] == address_convert[i]:
+            match_length += 1
+          else:
+            break
+        if match_length not in outroutes:
+          outroutes[match_length] = []
+        outroutes[match_length].append(entry)
+        if match_length > longest_match:
+          longest_match = match_length
 
-    return outroutes
+    return outroutes[longest_match]
 
   def get_shortest_as_path(self, routes):
     """ select the route with the shortest AS Path """
@@ -173,14 +194,11 @@ class Router:
     outroutes = []
    
     for item in routes:
-      
       source_type = self.relations[srcif]
       dest_type = self.relations[item[PEER]]
       if (source_type == PEER or source_type == PROV) and (dest_type == PEER or dest_type == PROV):
         continue
       outroutes.append(item)
-    
-      
         
     return outroutes
 
