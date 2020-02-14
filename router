@@ -241,9 +241,80 @@ class Router:
 
     return True
 
+  def compare_adj(self, o, t): #one and two
+    #are the IPs numerically adjacent 
+    if t[NMSK] != o[NMSK]:
+      return False
+    else:
+      o_netmask_split = o[NMSK].split('.')
+      o_network_split = o[NTWK].split('.')
+
+      t_netmask_split = t[NMSK].split('.')
+      t_network_split = t[NTWK].split('.')
+
+      o_network_convert = ""
+      for i in o_network_split:
+        o_network_convert += format(int(i), "08b")
+
+      t_network_convert = ""
+      for i in t_network_split:
+        t_network_convert += format(int(i), "08b")
+      
+      o_netmask_convert = ""
+      for i in o_netmask_split:
+        o_netmask_convert += format(int(i), "08b")
+
+      t_netmask_convert = ""
+      for i in t_netmask_split:
+        t_netmask_convert += format(int(i), "08b")
+     
+      o_network_convert = o_network_convert[0:len(o_netmask_convert.strip("0"))]
+      t_network_convert = t_network_convert[0:len(t_netmask_convert.strip("0"))]
+
+      o_network_convert = o_network_convert[:-1]
+      t_network_convert = t_network_convert[:-1]   
+      if o_network_convert == t_network_convert:
+        return True
+
   def coalesce(self):
     """ coalesce any routes that are right next to each other """
     # TODO (this is the most difficult task, save until last)
+    
+    for entry in self.routes:
+      comp_routes = self.lookup_routes(entry[NTWK])
+       
+      adj = False #are they numerically adjacent?
+      snh = False #same next hop?
+      att = False #same attributes?
+      for compare in self.routes:
+        if entry == compare: #this will repeat some comparisons but it should still work
+          continue #skip comparing it to itself
+        adj = self.compare_adj(entry, compare)
+        if entry[PEER] == compare[PEER]:
+          snh = True
+        if entry[LPRF] == compare[LPRF]:
+          if entry[SORG] == compare[SORG]:
+            if entry[APTH] == compare[APTH]:
+              if entry[ORIG] == compare[ORIG]:
+                att = True
+        if snh and att and adj:
+          #the logic to see if a route should be agg'd works 
+          #aggregate it
+          #THIS PART IS UNFINISHED
+          #Trying to make new entry for routing table (don't forget to remove the old entries, which you can access here with entry and compare)
+          netmask_split = entry[NMSK].split('.')
+          network_split = entry[NTWK].split('.')
+
+          network_convert = ""
+          for i in network_split:
+            network_convert += format(int(i), "08b")
+
+          netmask_convert = ""
+          for i in netmask_split:
+            netmask_convert += format(int(i), "08b")
+
+          network_convert = network_convert[0:len(netmask_convert.strip("0"))-1]
+          self.routes.append
     return False
 
   def update(self, srcif, packet):
@@ -279,12 +350,12 @@ class Router:
       new_packet_convert = bytes(json.dumps(new_packet), 'ascii')
       
       self.sockets[network[:-1] + '2'].sendall(new_packet_convert)
-
+    self.coalesce()
     return True
 
   def revoke(self, srcif, packet):
     """ handle revoke packets """
-    
+    #won't work with coalesce as is. disaggregation is required
     for item in packet[MESG]:
       revoke_info = {NTWK: item[NTWK],
                      NMSK: item[NMSK]}
