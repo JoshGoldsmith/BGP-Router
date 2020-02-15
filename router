@@ -335,8 +335,8 @@ class Router:
           network_convert_final = ""
           netmask_convert_final = ""
           for i in range(int(len(network_convert)/8)):
-            network_convert_final += int(network_convert[i*8:(i+1)*8], 2)
-            netmask_convert_final += int(netmask_convert[i*8:(i+1)*8], 2)
+            network_convert_final += str(int(network_convert[i*8:(i+1)*8], 2))
+            netmask_convert_final += str(int(netmask_convert[i*8:(i+1)*8], 2))
             if i != (len(network_convert)/8) - 1 :
               network_convert_final += "."
               netmask_convert_final += "."
@@ -377,18 +377,18 @@ class Router:
         if mask_split[i] != "255" and mask_split[i] != "0":
           is_agg = True
           section_index = i
-          mask_split_convert = format(mask_split[i], "08b")
-          new_mask_length = len(mask_split_convert.strip("0")) + 1
-          mask_split[i] = int(mask_split_convert[:new_mask_length] + "1" + mask_split_convert[new_mask_length + 1:], 2)
+          mask_split_convert = format(int(mask_split[i]), "08b")
+          new_mask_length = len(mask_split_convert.strip("0"))
+          mask_split[i] = str(int(mask_split_convert[:new_mask_length] + "1" + mask_split_convert[new_mask_length + 1:], 2))
           break
 
       if not is_agg:
         continue
 
       network_split = route[NTWK].split(".")
-      net_split_convert = format(mask_split[section_index], "08b")
-      first_val = int(net_split_convert[:new_mask_length] + "0" + net_split_convert[new_mask_length + 1:], 2)
-      second_val = int(net_split_convert[:new_mask_length] + "0" + net_split_convert[new_mask_length + 1:], 2)
+      net_split_convert = format(int(network_split[section_index]), "08b")
+      first_val = str(int(net_split_convert[:new_mask_length] + "0" + net_split_convert[new_mask_length + 1:], 2))
+      second_val = str(int(net_split_convert[:new_mask_length] + "1" + net_split_convert[new_mask_length + 1:], 2))
 
       first_network = ""
       second_network = ""
