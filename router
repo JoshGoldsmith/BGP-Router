@@ -78,10 +78,16 @@ class Router:
       
       mask_match = True
       for i in range(len(netmask_split)):
+        # Updated for bit masks
         if netmask_split[i] == '255':
           if not network_split[i] == address_split[i]:
             mask_match = False
             continue
+          else:
+            if netmask_split[i] != '0':
+              mask_split_length = len(format(int(netmask_split[i]), "08b").strip("0"))
+              if not network_convert[i*8:i*8+mask_split_length] == address_convert[i*8: i*8+mask_split_length]:
+                mask_match = False
 
       match_length = 0
       if mask_match:
@@ -226,7 +232,6 @@ class Router:
     if not routes:
       return []
     peer = routes[0][PEER]
-    #return self.sockets[peer] if peer else None
     return peer
   def forward(self, srcif, packet):
     """ Forward a data packet """
@@ -279,14 +284,22 @@ class Router:
   def coalesce(self):
     """ coalesce any routes that are right next to each other """
     # TODO (this is the most difficult task, save until last)
-    
-    for entry in self.routes:
+    index_to_del = []
+    routes_to_add = []
+
+    for entry_index in range(len(self.routes)):
+      if entry_index in index_to_del:
+        continue
+      entry = self.routes[entry_index]
       comp_routes = self.lookup_routes(entry[NTWK])
        
       adj = False #are they numerically adjacent?
       snh = False #same next hop?
       att = False #same attributes?
-      for compare in self.routes:
+      for compare_index in range(len(self.routes)):
+        if compare_index in index_to_del:
+          continue
+        compare = self.routes[compare_index]
         if entry == compare: #this will repeat some comparisons but it should still work
           continue #skip comparing it to itself
         adj = self.compare_adj(entry, compare)
@@ -300,8 +313,10 @@ class Router:
         if snh and att and adj:
           #the logic to see if a route should be agg'd works 
           #aggregate it
-          #THIS PART IS UNFINISHED
           #Trying to make new entry for routing table (don't forget to remove the old entries, which you can access here with entry and compare)
+          index_to_del.append(entry_index)
+          index_to_del.append(compare_index)
+
           netmask_split = entry[NMSK].split('.')
           network_split = entry[NTWK].split('.')
 
@@ -313,9 +328,42 @@ class Router:
           for i in netmask_split:
             netmask_convert += format(int(i), "08b")
 
-          network_convert = network_convert[0:len(netmask_convert.strip("0"))-1]
-          self.routes.append
-    return False
+          new_mask_length = len(netmask_convert.strip("0")) - 1
+          netmask_convert = netmask_convert[:new_mask_length] + "0" + netmask_convert[new_mask_length + 1:]
+          network_convert = network_convert[:new_mask_length] + "0" + network_convert[new_mask_length + 1:]
+
+          network_convert_final = ""
+          netmask_convert_final = ""
+          for i in range(int(len(network_convert)/8)):
+            network_convert_final += (int(network_convert[i*8:(i+1)*8]))
+            netmask_convert_final += (int(netmask_convert[i*8:(i+1)*8]))
+            if i != (len(network_convert)/8) - 1 :
+              network_convert_final += "."
+              netmask_convert_final += "."
+
+          new_route = {NTWK: network_convert_final,
+                       NMSK: netmask_convert_final,
+                       LPRF: entry[LPRF],
+                       SORG: entry[SORG],
+                       APTH: entry[APTH],
+                       ORIG: entry[ORIG],
+                       PEER: entry[PEER]}
+          routes_to_add.append(new_route)
+          break # this entry has been aggregated
+
+    index_to_del.sort(reverse=True)
+    for index in index_to_del:
+      del self.routes[index]
+    for route in routes_to_add:
+      self.routes.append(route)
+
+    if len(routes_to_add) > 0:
+      self.coalesce()
+
+    return True
+
+  
+  def disaggregate(self):
 
   def update(self, srcif, packet):
     """ handle update packets """
@@ -439,7 +487,7 @@ class Router:
               srcif = sock
           msg = json.loads(k)
           if not self.handle_packet(srcif, msg):
-            self.send_error(conn, msg)
+            self.send_error(srcif, msg)
         else:
           return
 
