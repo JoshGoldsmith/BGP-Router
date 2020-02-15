@@ -335,8 +335,8 @@ class Router:
           network_convert_final = ""
           netmask_convert_final = ""
           for i in range(int(len(network_convert)/8)):
-            network_convert_final += (int(network_convert[i*8:(i+1)*8]))
-            netmask_convert_final += (int(netmask_convert[i*8:(i+1)*8]))
+            network_convert_final += int(network_convert[i*8:(i+1)*8], 2)
+            netmask_convert_final += int(netmask_convert[i*8:(i+1)*8], 2)
             if i != (len(network_convert)/8) - 1 :
               network_convert_final += "."
               netmask_convert_final += "."
@@ -362,8 +362,73 @@ class Router:
 
     return True
 
-  
+  # disaggregate any routes with netmasks containing numbers other than 255 or 0
   def disaggregate(self):
+    index_to_del = []
+    routes_to_add = []
+    for index in range(len(self.routes)):
+      route = self.routes[index]
+      mask_split = route[NMSK].split(".")
+      is_agg = False
+      section_index = 0
+      new_mask_length = 0
+
+      for i in range(len(mask_split)):
+        if mask_split[i] != "255" and mask_split[i] != "0":
+          is_agg = True
+          section_index = i
+          mask_split_convert = format(mask_split[i], "08b")
+          new_mask_length = len(mask_split_convert.strip("0")) + 1
+          mask_split[i] = int(mask_split_convert[:new_mask_length] + "1" + mask_split_convert[new_mask_length + 1:], 2)
+          break
+
+      if not is_agg:
+        continue
+
+      network_split = route[NTWK].split(".")
+      net_split_convert = format(mask_split[section_index], "08b")
+      first_val = int(net_split_convert[:new_mask_length] + "0" + net_split_convert[new_mask_length + 1:], 2)
+      second_val = int(net_split_convert[:new_mask_length] + "0" + net_split_convert[new_mask_length + 1:], 2)
+
+      first_network = ""
+      second_network = ""
+      new_mask = ""
+      for i in range(len(network_split)):
+        new_mask += mask_split[i]
+        if i == section_index:
+          first_network += first_val
+          second_network += second_val
+        else:
+          first_network += network_split[i]
+          second_network += network_split[i]
+        if i != len(network_split) - 1:
+          first_network += "."
+          second_network += "."
+          new_mask += "."
+
+      first_route = {NTWK: first_network,
+                     NMSK: new_mask,
+                     LPRF: route[LPRF],
+                     SORG: route[SORG],
+                     APTH: route[APTH],
+                     ORIG: route[ORIG],
+                     PEER: route[PEER]}
+
+      routes_to_add.append(first_route)
+      second_route = first_route
+      second_route[NTWK] = second_network
+      routes_to_add.append(second_route)
+      index_to_del.insert(0, index)
+
+    for i in index_to_del:
+      del self.routes[i]
+
+    for i in routes_to_add:
+      self.routes.append(i)
+
+    if len(routes_to_add) > 0:
+      self.disaggregate()
+
 
   def update(self, srcif, packet):
     """ handle update packets """
@@ -393,8 +458,6 @@ class Router:
                     TYPE: UPDT,
                     MESG: update_info}
 
-
-
       new_packet_convert = bytes(json.dumps(new_packet), 'ascii')
       
       self.sockets[network[:-1] + '2'].sendall(new_packet_convert)
@@ -404,6 +467,8 @@ class Router:
   def revoke(self, srcif, packet):
     """ handle revoke packets """
     #won't work with coalesce as is. disaggregation is required
+    self.disaggregate()
+
     for item in packet[MESG]:
       revoke_info = {NTWK: item[NTWK],
                      NMSK: item[NMSK]}
@@ -423,14 +488,11 @@ class Router:
                     TYPE: RVKE,
                     MESG: packet[MESG]}
 
-
-
       new_packet_convert = bytes(json.dumps(new_packet), 'ascii')
       
       self.sockets[network[:-1] + '2'].sendall(new_packet_convert)
 
-
-
+    self.coalesce()
     return True
 
   def dump(self, packet):
